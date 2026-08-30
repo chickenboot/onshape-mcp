@@ -591,6 +591,69 @@ class SketchBuilder:
 
         return self
 
+    def add_polyline(
+        self,
+        points: List[Tuple[float, float]],
+        closed: bool = True,
+        is_construction: bool = False,
+    ) -> "SketchBuilder":
+        """Add a polyline (open or closed chain of line segments) to the sketch.
+
+        A closed polyline with 3+ points forms a region that can be extruded or
+        revolved, which is how arbitrary profiles (channels, hoods, brackets)
+        are built. Consecutive segments share endpoints via coincident constraints.
+
+        Args:
+            points: Vertices (x, y) in inches, in order. Must not contain
+                consecutive duplicates.
+            closed: If True, a segment is added from the last point back to the first.
+            is_construction: Whether this is construction geometry
+
+        Returns:
+            Self for chaining
+
+        Raises:
+            ValueError: If fewer than 2 points (open) or 3 points (closed)
+        """
+        if len(points) < (3 if closed else 2):
+            raise ValueError("Polyline needs at least 3 points when closed, 2 when open")
+
+        n = len(points)
+        segments = n if closed else n - 1
+        line_ids: List[str] = []
+        for i in range(segments):
+            start = points[i]
+            end = points[(i + 1) % n]
+            before = len(self.entities)
+            self.add_line(start, end, is_construction=is_construction)
+            line_ids.append(self.entities[before]["entityId"])
+
+        # Coincident constraints between consecutive segment endpoints
+        pairs = list(zip(line_ids, line_ids[1:]))
+        if closed:
+            pairs.append((line_ids[-1], line_ids[0]))
+        for a, b in pairs:
+            self.constraints.append(
+                {
+                    "btType": "BTMSketchConstraint-2",
+                    "constraintType": "COINCIDENT",
+                    "entityId": self._generate_entity_id("coincident"),
+                    "parameters": [
+                        {
+                            "btType": "BTMParameterString-149",
+                            "value": f"{a}.end",
+                            "parameterId": "localFirst",
+                        },
+                        {
+                            "btType": "BTMParameterString-149",
+                            "value": f"{b}.start",
+                            "parameterId": "localSecond",
+                        },
+                    ],
+                }
+            )
+        return self
+
     def add_polygon(
         self,
         center: Tuple[float, float],

@@ -36,6 +36,12 @@ class ExtrudeBuilder:
         self.depth = depth
         self.operation_type = operation_type
         self.depth_variable: Optional[str] = None
+        self.opposite_direction: bool = False
+
+    def set_opposite_direction(self, opposite: bool = True) -> "ExtrudeBuilder":
+        """Flip the extrude to go against the sketch plane normal."""
+        self.opposite_direction = opposite
+        return self
 
     def set_depth(self, depth: float, variable_name: Optional[str] = None) -> "ExtrudeBuilder":
         """Set extrude depth.
@@ -97,7 +103,6 @@ class ExtrudeBuilder:
                         ],
                         "parameterId": "entities",
                         "parameterName": "",
-                        "libraryRelationType": "NONE",
                     },
                     {
                         "btType": "BTMParameterEnum-145",
@@ -106,7 +111,6 @@ class ExtrudeBuilder:
                         "value": self.operation_type.value,
                         "parameterId": "operationType",
                         "parameterName": "",
-                        "libraryRelationType": "NONE",
                     },
                     {
                         "btType": "BTMParameterQuantity-147",
@@ -116,14 +120,12 @@ class ExtrudeBuilder:
                         "expression": depth_expression,
                         "parameterId": "depth",
                         "parameterName": "",
-                        "libraryRelationType": "NONE",
                     },
                     {
                         "btType": "BTMParameterBoolean-144",
-                        "value": False,
+                        "value": self.opposite_direction,
                         "parameterId": "oppositeDirection",
                         "parameterName": "",
-                        "libraryRelationType": "NONE",
                     },
                 ],
             },

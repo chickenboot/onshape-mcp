@@ -355,3 +355,61 @@ class TestSketchBuilderPolygon:
 
         result = sketch.build()
         assert len(result["feature"]["entities"]) == 7
+
+
+class TestSketchBuilderPolyline:
+    """Tests for add_polyline (arbitrary open/closed profiles)."""
+
+    def _builder(self):
+        return SketchBuilder(name="Test", plane=SketchPlane.RIGHT, plane_id="plane123")
+
+    def test_add_polyline_returns_self(self):
+        sketch = self._builder()
+        assert sketch.add_polyline([(0, 0), (1, 0), (1, 1)]) is sketch
+
+    def test_closed_polyline_segment_count(self):
+        sketch = self._builder().add_polyline([(0, 0), (2, 0), (2, 1), (0, 1)])
+        lines = [e for e in sketch.entities if e["geometry"]["btType"] == "BTCurveGeometryLine-117"]
+        assert len(lines) == 4
+
+    def test_open_polyline_segment_count(self):
+        sketch = self._builder().add_polyline([(0, 0), (2, 0), (2, 1)], closed=False)
+        assert len(sketch.entities) == 2
+
+    def test_closed_polyline_coincident_constraints_form_loop(self):
+        sketch = self._builder().add_polyline([(0, 0), (1, 0), (1, 1)])
+        coincident = [c for c in sketch.constraints if c["constraintType"] == "COINCIDENT"]
+        assert len(coincident) == 3
+        ids = [e["entityId"] for e in sketch.entities]
+        last = coincident[-1]["parameters"]
+        assert last[0]["value"] == f"{ids[-1]}.end"
+        assert last[1]["value"] == f"{ids[0]}.start"
+
+    def test_open_polyline_has_no_closing_constraint(self):
+        sketch = self._builder().add_polyline([(0, 0), (1, 0), (1, 1)], closed=False)
+        coincident = [c for c in sketch.constraints if c["constraintType"] == "COINCIDENT"]
+        assert len(coincident) == 1
+
+    def test_polyline_segment_geometry(self):
+        sketch = self._builder().add_polyline([(0, 0), (1, 0), (1, 1)])
+        first = sketch.entities[0]["geometry"]
+        assert first["dirX"] == pytest.approx(1.0)
+        assert first["dirY"] == pytest.approx(0.0)
+        assert sketch.entities[0]["endParam"] == pytest.approx(0.0254)
+
+    def test_polyline_construction_flag(self):
+        sketch = self._builder().add_polyline([(0, 0), (1, 0), (1, 1)], is_construction=True)
+        assert all(e["isConstruction"] for e in sketch.entities)
+
+    def test_closed_polyline_too_few_points_raises(self):
+        with pytest.raises(ValueError, match="at least 3"):
+            self._builder().add_polyline([(0, 0), (1, 0)])
+
+    def test_open_polyline_too_few_points_raises(self):
+        with pytest.raises(ValueError, match="at least 3"):
+            self._builder().add_polyline([(0, 0)], closed=False)
+
+    def test_polyline_builds_valid_feature(self):
+        feature = self._builder().add_polyline([(0, 0), (1, 0), (1, 1)]).build()
+        assert feature["feature"]["btType"] == "BTMSketch-151"
+        assert len(feature["feature"]["entities"]) == 3

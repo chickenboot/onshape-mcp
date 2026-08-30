@@ -128,6 +128,11 @@ async def list_tools() -> list[Tool]:
                         "description": "Extrude operation type",
                         "default": "NEW",
                     },
+                    "oppositeDirection": {
+                        "type": "boolean",
+                        "description": "Extrude against the sketch plane normal (e.g. -Y from Front plane)",
+                        "default": False,
+                    },
                 },
                 "required": ["documentId", "workspaceId", "elementId", "sketchFeatureId", "depth"],
             },
@@ -613,6 +618,37 @@ async def list_tools() -> list[Tool]:
                     "radius": {"type": "number", "description": "Radius in inches"},
                 },
                 "required": ["documentId", "workspaceId", "elementId", "radius"],
+            },
+        ),
+        Tool(
+            name="create_sketch_polyline",
+            description="Create a sketch from a chain of straight segments through the given points on a standard plane. Closed by default, which yields a single region suitable for extrude/revolve — use this for arbitrary profiles (channels, hoods, brackets, L/U/Z sections). Coordinates are in inches.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "documentId": {"type": "string", "description": "Document ID"},
+                    "workspaceId": {"type": "string", "description": "Workspace ID"},
+                    "elementId": {"type": "string", "description": "Part Studio element ID"},
+                    "name": {"type": "string", "description": "Sketch name", "default": "Polyline"},
+                    "plane": {
+                        "type": "string",
+                        "enum": ["Front", "Top", "Right"],
+                        "description": "Sketch plane",
+                        "default": "Front",
+                    },
+                    "points": {
+                        "type": "array",
+                        "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                        "minItems": 2,
+                        "description": "Ordered vertices [[x, y], ...] in inches",
+                    },
+                    "closed": {
+                        "type": "boolean",
+                        "description": "Join the last point back to the first (default true)",
+                        "default": True,
+                    },
+                },
+                "required": ["documentId", "workspaceId", "elementId", "points"],
             },
         ),
         Tool(
@@ -1234,6 +1270,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             )
 
             extrude.set_depth(arguments["depth"], variable_name=arguments.get("variableDepth"))
+            extrude.set_opposite_direction(bool(arguments.get("oppositeDirection", False)))
 
             # Add feature to Part Studio
             feature_data = extrude.build()
@@ -2121,6 +2158,28 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             return [TextContent(type="text", text=f"Created sketch with circle on {plane_name} plane. Feature ID: {feature_id}")]
         except Exception as e:
             return [TextContent(type="text", text=f"Error creating sketch circle: {str(e)}")]
+
+    elif name == "create_sketch_polyline":
+        try:
+            plane_name = arguments.get("plane", "Front")
+            plane = SketchPlane[plane_name.upper()]
+            plane_id = await partstudio_manager.get_plane_id(
+                arguments["documentId"], arguments["workspaceId"], arguments["elementId"], plane_name,
+            )
+            sketch = SketchBuilder(name=arguments.get("name", "Polyline"), plane=plane, plane_id=plane_id)
+            sketch.add_polyline(
+                points=[tuple(p) for p in arguments["points"]],
+                closed=bool(arguments.get("closed", True)),
+            )
+            feature_data = sketch.build()
+            result = await partstudio_manager.add_feature(
+                arguments["documentId"], arguments["workspaceId"], arguments["elementId"], feature_data,
+            )
+            feature_id = result.get("feature", {}).get("featureId", "unknown")
+            n = len(arguments["points"])
+            return [TextContent(type="text", text=f"Created sketch with {n}-point polyline on {plane_name} plane. Feature ID: {feature_id}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error creating sketch polyline: {str(e)}")]
 
     elif name == "create_sketch_line":
         try:
